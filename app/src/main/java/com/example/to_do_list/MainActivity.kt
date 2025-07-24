@@ -2,6 +2,7 @@ package com.example.to_do_list
 
 import android.os.Bundle
 import android.widget.*
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
 class MainActivity : AppCompatActivity() {
@@ -23,18 +24,36 @@ class MainActivity : AppCompatActivity() {
         listViewTasks = findViewById(R.id.listViewTasks)
 
         // Cargar tareas guardadas
-        tasks = SharedPrefsHelper.loadTasks(this)
-        adapter = TaskAdapter(this, tasks)
-        listViewTasks.adapter = adapter
-        listViewTasks.choiceMode = ListView.CHOICE_MODE_MULTIPLE
+        tasks = SharedPrefsHelper.loadTasks(this).toMutableList()
+        setupAdapter()
 
         // Configurar listeners
         buttonAdd.setOnClickListener { addTask() }
         buttonDelete.setOnClickListener { deleteSelectedTasks() }
+        updateDeleteButton()
     }
 
-    fun saveTasks() {
-        SharedPrefsHelper.saveTasks(this, tasks)
+    private fun setupAdapter() {
+        adapter = TaskAdapter(
+            context = this,
+            tasks = tasks,
+            onTaskChecked = { position, isChecked ->
+                tasks[position].isCompleted = isChecked
+                saveTasks()
+            },
+            onTaskEdit = { position ->
+                showEditDialog(position)
+            },
+            onTaskSelected = { position ->
+                adapter.toggleSelection(position)
+                updateDeleteButton()
+            }
+        )
+        listViewTasks.adapter = adapter
+    }
+
+    private fun updateDeleteButton() {
+        buttonDelete.isEnabled = adapter.getSelectedTasks().isNotEmpty()
     }
 
     private fun addTask() {
@@ -48,18 +67,45 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun deleteSelectedTasks() {
-        val checkedPositions = listViewTasks.checkedItemPositions
-        val itemsToRemove = mutableListOf<Task>()
+        val selectedTasks = adapter.getSelectedTasks()
+        if (selectedTasks.isEmpty()) return
 
-        for (i in 0 until listViewTasks.count) {
-            if (checkedPositions.get(i)) {
-                itemsToRemove.add(tasks[i])
+        AlertDialog.Builder(this)
+            .setTitle("Eliminar tareas")
+            .setMessage("¿Estás seguro de eliminar ${selectedTasks.size} tareas?")
+            .setPositiveButton("Eliminar") { _, _ ->
+                tasks.removeAll(selectedTasks)
+                adapter.clearSelections()
+                adapter.notifyDataSetChanged()
+                saveTasks()
+                updateDeleteButton()
             }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun showEditDialog(position: Int) {
+        val task = tasks[position]
+        val editText = EditText(this).apply {
+            setText(task.description)
         }
 
-        tasks.removeAll(itemsToRemove)
-        adapter.notifyDataSetChanged()
-        listViewTasks.clearChoices()
-        saveTasks()
+        AlertDialog.Builder(this)
+            .setTitle("Editar tarea")
+            .setView(editText)
+            .setPositiveButton("Guardar") { _, _ ->
+                val newText = editText.text.toString().trim()
+                if (newText.isNotEmpty()) {
+                    task.description = newText
+                    adapter.notifyDataSetChanged()
+                    saveTasks()
+                }
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun saveTasks() {
+        SharedPrefsHelper.saveTasks(this, tasks)
     }
 }
